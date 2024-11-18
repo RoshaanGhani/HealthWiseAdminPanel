@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - View Past Surveys</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .loading-spinner {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        .error-message {
+            background-color: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .no-surveys {
+            text-align: center;
+            padding: 40px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .survey {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            padding: 20px;
+            transition: transform 0.2s;
+        }
+
+        .survey:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .survey-title {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+
+        .survey-dates {
+            color: #666;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+
+        .question {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+        }
+
+        .question-title {
+            font-weight: bold;
+            color: #34495e;
+            margin-bottom: 10px;
+        }
+
+        .choices {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .choice {
+            margin-bottom: 8px;
+            color: #555;
+        }
+
+        .responses {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border: 1px solid #eee;
+        }
+
+        .response-item {
+            margin-bottom: 12px;
+            padding: 10px;
+            background-color: white;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .response-user {
+            font-weight: bold;
+            color: #444;
+            margin-bottom: 5px;
+        }
+
+        .response-answer {
+            color: #333;
+            word-break: break-word;
+        }
+
+        .refresh-button {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .refresh-button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Past Surveys</h1>
+        <button class="refresh-button" onclick="displaySurveys()">Refresh Surveys</button>
+        <div id="surveyList"></div>
+    </div>
+
+    <!-- Update Firebase SDK imports to modules -->
+    <script type="module">
+        // Import the Firebase functions we need
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.6.10/firebase-app.js';
+        import { 
+            getFirestore, 
+            collection, 
+            getDocs, 
+            query, 
+            where 
+        } from 'https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore.js';
+
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCrelCatMKLFsyEPOWitxzKamUUpzysqcQ",
+            authDomain: "healthwise-app-fc27f.firebaseapp.com",
+            projectId: "healthwise-app-fc27f",
+            storageBucket: "healthwise-app-fc27f.appspot.com",
+            messagingSenderId: "50687506324",
+            appId: "1:50687506324:web:2d4b22c652bb0535060181",
+            measurementId: "G-WDTFFJ2TH2"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Function to format date
+        function formatDate(date) {
+            return new Date(date).toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Function to display loading state
+        function showLoading() {
+            const surveyList = document.getElementById('surveyList');
+            surveyList.innerHTML = '<div class="loading-spinner">Loading surveys...</div>';
+        }
+
+        // Function to display error state
+        function showError(message) {
+            const surveyList = document.getElementById('surveyList');
+            surveyList.innerHTML = `<div class="error-message">${message}</div>`;
+        }
+
+        // Function to display no surveys state
+        function showNoSurveys() {
+            const surveyList = document.getElementById('surveyList');
+            surveyList.innerHTML = `
+                <div class="no-surveys">
+                    <h2>No Surveys Available</h2>
+                    <p>There are currently no surveys in the system.</p>
+                </div>
+            `;
+        }
+
+        // Function to safely parse and format response data
+        function formatResponseData(responses) {
+            try {
+                if (typeof responses === 'string') {
+                    responses = JSON.parse(responses);
+                }
+                return Object.entries(responses)
+                    .map(([question, answer]) => `${question}: ${answer}`)
+                    .join('<br>');
+            } catch (e) {
+                return 'Unable to format response data';
+            }
+        }
+
+        // Function to summarize responses for each question
+        function summarizeResponses(responses) {
+            const summary = {};
+            responses.forEach(response => {
+                Object.entries(response.responses).forEach(([question, answer]) => {
+                    // Convert answer to a string if it's an object/array
+                    const formattedAnswer = formatAnswer(answer);
+                    
+                    if (!summary[question]) {
+                        summary[question] = {};
+                    }
+                    if (!summary[question][formattedAnswer]) {
+                        summary[question][formattedAnswer] = 0;
+                    }
+                    summary[question][formattedAnswer]++;
+                });
+            });
+            return summary;
+        }
+
+        // Function to format individual answers
+        function formatAnswer(answer) {
+            if (typeof answer === 'object') {
+                // If the answer is an array or object, stringify it
+                return JSON.stringify(answer);
+            }
+            return answer;  // Return the answer as-is if it's a string or number
+        }
+
+        // Function to format the summary for display
+        function formatSummary(summary) {
+            return Object.entries(summary).map(([question, answers]) => {
+                const answerSummary = Object.entries(answers)
+                    .map(([answer, count]) => `${count} users chose "${answer}"`)
+                    .join('<br>');
+                return `<div><strong>${question}:</strong><br>${answerSummary}</div>`;
+            }).join('');
+        }
+
+        // Main function to fetch and display surveys
+        async function displaySurveys() {
+            showLoading();
+
+            try {
+                const surveys = await fetchAllSurveys();
+
+                if (!surveys || surveys.length === 0) {
+                    showNoSurveys();
+                    return;
+                }
+
+                const surveyList = document.getElementById('surveyList');
+                surveyList.innerHTML = ''; // Clear previous content
+
+                for (const survey of surveys) {
+                    const surveyDiv = document.createElement('div');
+                    surveyDiv.className = 'survey';
+
+                    surveyDiv.innerHTML = `
+                        <div class="survey-title">${survey.title || 'Untitled Survey'}</div>
+                        <div class="survey-dates">
+                            Start: ${formatDate(survey.startDate)}
+                            <br>
+                            End: ${formatDate(survey.endDate)}
+                        </div>
+                    `;
+
+                    try {
+                        // Fetch and display survey questions
+                        const questions = await getSurveyQuestions(survey.id);
+                        if (questions.length > 0) {
+                            const questionsHTML = questions.map(question => `
+                                <div class="question">
+                                    <div class="question-title">${question.content}</div>
+                                    ${question.choices && question.choices.length > 0 ? `
+                                        <div class="choices">
+                                            ${question.choices.map(choice => `
+                                                <div class="choice">• ${choice}</div>
+                                            `).join('')}
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            `).join('');
+                            surveyDiv.innerHTML += questionsHTML;
+                        }
+
+                        // Fetch and display responses
+                        const responses = await fetchUserResponses(survey.id);
+                        const responsesDiv = document.createElement('div');
+                        responsesDiv.className = 'responses';
+
+                        if (responses && responses.length > 0) {
+                            // Summarize responses
+                            const summary = summarizeResponses(responses);
+                            const summaryHTML = formatSummary(summary);
+
+                            responsesDiv.innerHTML = `
+                                <h3>Response Summary:</h3>
+                                ${summaryHTML}
+                            `;
+                        } else {
+                            responsesDiv.innerHTML = '<p>No responses yet for this survey.</p>';
+                        }
+
+                        surveyDiv.appendChild(responsesDiv);
+                    } catch (error) {
+                        console.error('Error processing survey:', error);
+                        surveyDiv.innerHTML += `
+                            <div class="error-message">
+                                Error loading survey details. Please try again later.
+                            </div>
+                        `;
+                    }
+
+                    surveyList.appendChild(surveyDiv);
+                }
+            } catch (error) {
+                console.error('Error fetching surveys:', error);
+                showError('Error fetching surveys. Please try again later.');
+            }
+        }
+
+        // Fetch user responses for a given survey
+        async function fetchUserResponses(surveyId) {
+            try {
+                const userResponsesRef = collection(db, 'userSurveyResponses');
+                const q = query(userResponsesRef, where('surveyId', '==', surveyId));
+                const userResponsesSnapshot = await getDocs(q);
+
+                return userResponsesSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+            } catch (error) {
+                console.error('Error fetching responses:', error);
+                return [];
+            }
+        }
+
+        // Function to fetch all surveys from Firestore
+        async function fetchAllSurveys() {
+            try {
+                const surveysCol = collection(db, 'surveys');
+                const surveySnapshot = await getDocs(surveysCol);
+
+                return surveySnapshot.docs.map(doc => {
+                    const data = doc.data();
+                    return {
+                        id: doc.id,
+                        title: data.title || "Untitled Survey",
+                        startDate: (data.startDate?.toDate ? data.startDate.toDate() : data.startDate) || new Date(),
+                        endDate: (data.endDate?.toDate ? data.endDate.toDate() : data.endDate) || new Date(),
+                        ...data
+                    };
+                });
+            } catch (error) {
+                console.error('Error in fetchAllSurveys:', error);
+                throw error;
+            }
+        }
+
+        // Fetch survey questions from Firestore
+        async function getSurveyQuestions(surveyId) {
+            try {
+                const questionsCol = collection(db, 'surveys', surveyId, 'questions');
+                const questionSnapshot = await getDocs(questionsCol);
+
+                return questionSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    content: doc.data().content || 'No content provided',
+                    questionType: doc.data().questionType || 'text',
+                    choices: doc.data().choices || []
+                }));
+            } catch (error) {
+                console.error('Error fetching questions:', error);
+                return [];
+            }
+        }
+
+        // Make displaySurveys available globally
+        window.displaySurveys = displaySurveys;
+
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', displaySurveys);
+    </script>
+</body>
+</html>

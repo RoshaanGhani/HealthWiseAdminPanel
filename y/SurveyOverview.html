@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Survey Results Analysis</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1.main-title {
+            font-size: 24px;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .survey-selector {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        select {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        .refresh-btn {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .refresh-btn:hover {
+            background-color: #45a049;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .metric-card {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .metric-title {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .survey-header {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: none;
+        }
+
+        .survey-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #666;
+        }
+
+        .questions-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .question-card {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            font-size: 18px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="main-title">Survey Results Analysis</h1>
+        
+        <div class="survey-selector">
+            <select id="surveySelect">
+                <option value="">Select a survey...</option>
+            </select>
+            <button id="refreshBtn" class="refresh-btn">Refresh Data</button>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-title">TOTAL RESPONSES</div>
+                <div class="metric-value" id="totalResponses">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">AVERAGE COMPLETION TIME</div>
+                <div class="metric-value" id="avgCompletionTime">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">RESPONSE RATE</div>
+                <div class="metric-value" id="responseRate">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">LATEST RESPONSE</div>
+                <div class="metric-value" id="latestResponse">-</div>
+            </div>
+        </div>
+
+        <div id="surveyDetails" class="survey-header">
+            <h1 id="surveyTitle">Survey Overview</h1>
+            <div class="survey-info">
+                <div class="info-item">
+                    <i>📅</i>
+                    <span id="createdDate"></span>
+                </div>
+                <div class="info-item">
+                    <i>👤</i>
+                    <span id="createdBy"></span>
+                </div>
+                <div class="info-item">
+                    <i>⏱️</i>
+                    <span id="dateRange"></span>
+                </div>
+            </div>
+        </div>
+
+        <div id="loadingIndicator" class="loading" style="display: none;">
+            Loading survey data...
+        </div>
+
+        <div id="questionsContainer" class="questions-container">
+            <!-- Questions will be dynamically added here -->
+        </div>
+    </div>
+
+    <script>
+        // Firebase configuration
+        const firebaseConfig = {
+ 
+ apiKey: "AIzaSyCrelCatMKLFsyEPOWitxzKamUUpzysqcQ",
+
+ authDomain: "healthwise-app-fc27f.firebaseapp.com",
+
+ projectId: "healthwise-app-fc27f",
+
+ storageBucket: "healthwise-app-fc27f.appspot.com",
+
+ messagingSenderId: "50687506324",
+
+ appId: "1:50687506324:web:2d4b22c652bb0535060181",
+
+ measurementId: "G-WDTFFJ2TH2"
+
+};
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // Initialize the page
+        async function initializePage() {
+            await loadSurveys();
+            
+            // Add event listeners
+            document.getElementById('surveySelect').addEventListener('change', handleSurveySelection);
+            document.getElementById('refreshBtn').addEventListener('click', loadSurveys);
+        }
+
+        // Load surveys into dropdown
+        async function loadSurveys() {
+            try {
+                const surveysSnapshot = await db.collection('surveys').get();
+                const surveySelect = document.getElementById('surveySelect');
+                
+                // Clear existing options except the first one
+                while (surveySelect.options.length > 1) {
+                    surveySelect.remove(1);
+                }
+
+                surveysSnapshot.forEach(doc => {
+                    const option = document.createElement('option');
+                    option.value = doc.id;
+                    option.textContent = doc.data().title;
+                    surveySelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error("Error loading surveys:", error);
+                alert("Error loading surveys. Please try again later.");
+            }
+        }
+
+        // Handle survey selection
+        async function handleSurveySelection(event) {
+            const surveyId = event.target.value;
+            if (!surveyId) {
+                resetDashboard();
+                return;
+            }
+
+            showLoading(true);
+
+            try {
+                const surveyDoc = await db.collection('surveys').doc(surveyId).get();
+                const surveyData = surveyDoc.data();
+
+                // Get responses subcollection
+                const responsesSnapshot = await db.collection('surveys')
+                    .doc(surveyId)
+                    .collection('responses')
+                    .get();
+
+                // Get questions subcollection
+                const questionsSnapshot = await db.collection('surveys')
+                    .doc(surveyId)
+                    .collection('questions')
+                    .get();
+
+                const questions = [];
+                questionsSnapshot.forEach(doc => {
+                    questions.push({ id: doc.id, ...doc.data() });
+                });
+
+                // Calculate metrics
+                const metrics = calculateMetrics(responsesSnapshot.docs, surveyData);
+                
+                // Update UI
+                updateMetrics(metrics);
+                displaySurveyDetails(surveyData);
+                displayQuestions(questions, responsesSnapshot.docs);
+            } catch (error) {
+                console.error("Error loading survey details:", error);
+                alert("Error loading survey details. Please try again later.");
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Calculate survey metrics
+        function calculateMetrics(responses, surveyData) {
+            const totalResponses = responses.length;
+            
+            let avgCompletionTime = 0;
+            let latestResponseDate = null;
+            
+            responses.forEach(response => {
+                const data = response.data();
+                if (data.completionTime) {
+                    avgCompletionTime += data.completionTime;
+                }
+                
+                if (data.submittedAt) {
+                    const responseDate = data.submittedAt.toDate();
+                    if (!latestResponseDate || responseDate > latestResponseDate) {
+                        latestResponseDate = responseDate;
+                    }
+                }
+            });
+
+            avgCompletionTime = totalResponses ? Math.round(avgCompletionTime / totalResponses) : 0;
+
+            // Calculate response rate (if target audience is specified in survey data)
+            const responseRate = surveyData.targetAudience ? 
+                ((totalResponses / surveyData.targetAudience) * 100).toFixed(1) + '%' : 'N/A';
+
+            return {
+                totalResponses,
+                avgCompletionTime,
+                responseRate,
+                latestResponse: latestResponseDate
+            };
+        }
+
+        // Update metrics display
+        function updateMetrics(metrics) {
+            document.getElementById('totalResponses').textContent = metrics.totalResponses;
+            document.getElementById('avgCompletionTime').textContent = 
+                metrics.avgCompletionTime ? `${metrics.avgCompletionTime}s` : '-';
+            document.getElementById('responseRate').textContent = metrics.responseRate;
+            document.getElementById('latestResponse').textContent = 
+                metrics.latestResponse ? formatDate(metrics.latestResponse) : '-';
+        }
+
+        // Reset dashboard to initial state
+        function resetDashboard() {
+            document.getElementById('surveyDetails').style.display = 'none';
+            document.getElementById('questionsContainer').innerHTML = '';
+            updateMetrics({
+                totalResponses: '-',
+                avgCompletionTime: '-',
+                responseRate: '-',
+                latestResponse: '-'
+            });
+        }
+
+        // Display survey details
+        function displaySurveyDetails(surveyData) {
+            document.getElementById('surveyDetails').style.display = 'block';
+            document.getElementById('surveyTitle').textContent = surveyData.title;
+            document.getElementById('createdDate').textContent = `Created: ${formatDate(surveyData.createdAt)}`;
+            document.getElementById('createdBy').textContent = `Created by: ${surveyData.createdBy}`;
+            document.getElementById('dateRange').textContent = 
+                `Active: ${formatDate(surveyData.startDate)} - ${formatDate(surveyData.endDate)}`;
+        }
+
+        // Display questions and responses
+        function displayQuestions(questions, responses) {
+            const container = document.getElementById('questionsContainer');
+            container.innerHTML = '';
+
+            questions.forEach((question, index) => {
+                const questionResponses = responses.map(r => r.data()[question.id]);
+                const card = createQuestionCard(question, questionResponses, index);
+                container.appendChild(card);
+            });
+        }
+
+        // Create question card with chart
+        function createQuestionCard(question, responses, index) {
+            const card = document.createElement('div');
+            card.className = 'question-card';
+
+            const title = document.createElement('h2');
+            title.className = 'question-title';
+            title.textContent = `Question ${index + 1}: ${question.content}`;
+            card.appendChild(title);
+
+            if (question.questionType === 'multiple-choice') {
+                const chartContainer = document.createElement('div');
+                chartContainer.className = 'chart-container';
+                const canvas = document.createElement('canvas');
+                chartContainer.appendChild(canvas);
+                card.appendChild(chartContainer);
+
+                // Calculate response counts
+                const responseCounts = {};
+                question.choices.forEach(choice => {
+                    responseCounts[choice] = responses.filter(r => r === choice).length;
+                });
+
+                createPieChart(canvas, Object.keys(responseCounts), Object.values(responseCounts));
+            }
+
+            return card;
+        }
+
+        // Create pie chart
+        function createPieChart(canvas, labels, data) {
+            const ctx = canvas.getContext('2d');
+            new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: [
+                            '#FF6384',
+                            '#36A2EB',
+                            '#FFCE56',
+                            '#4BC0C0',
+                            '#9966FF'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Format date helper function
+        function formatDate(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+            return date.toLocaleDateString();
+        }
+
+        // Show/hide loading indicator
+        function showLoading(show) {
+            document.getElementById('loadingIndicator').style.display = show ? 'block' : 'none';
+        }
+
+        // Initialize the page when the DOM is loaded
+        document.addEventListener('DOMContentLoaded', initializePage);
+    </script>
+</body>
+</html>

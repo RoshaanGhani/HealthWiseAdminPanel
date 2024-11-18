@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manager Branch Quiz Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            padding: 20px;
+            position: relative;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: auto;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            position: relative;
+        }
+
+        .survey-overview-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background-color: #000;
+            color: #fff;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        h1, h2 {
+            color: #333;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: center;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        .chart-container {
+            width: 100%;
+            margin-top: 30px;
+        }
+
+        #noStatsMessage, #noQuizMessage, #errorMessage {
+            display: none;
+            text-align: center;
+            margin-top: 50px;
+            color: #888;
+        }
+    </style>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js/dist/chart.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Survey Overview Button -->
+        <button class="survey-overview-btn" onclick="goToSurveyOverview()">Survey Overview</button>
+
+        <h1 id="welcomeMessage">Welcome, Branch Manager at <span id="branchName"></span></h1>
+        
+        <h2>Select a Quiz</h2>
+        <select id="quizDropdown" onchange="fetchBranchQuizData()">
+            <option value="">Select a quiz...</option>
+        </select>
+
+        <div id="noQuizMessage">No quizzes available for your branch yet.</div>
+
+        <table id="quizReportTable">
+            <thead>
+                <tr>
+                    <th>No. of Users</th>
+                    <th>Average Score</th>
+                    <th>Passed</th>
+                    <th>Failed</th>
+                    <th>Highest Score</th>
+                    <th>Lowest Score</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td id="numUsers"></td>
+                    <td id="avgScore"></td>
+                    <td id="passedCount"></td>
+                    <td id="failedCount"></td>
+                    <td id="highestScore"></td>
+                    <td id="lowestScore"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="chart-container">
+            <canvas id="scoreChart"></canvas>
+        </div>
+
+        <h2>Users Who Did Not Take the Quiz</h2>
+        <table id="nonParticipantsTable">
+            <thead>
+                <tr>
+                    <th>User ID</th>
+                    <th>Name</th>
+                    <th>Email</th>
+                </tr>
+            </thead>
+            <tbody id="nonParticipantsBody"></tbody>
+        </table>
+
+        <div id="noStatsMessage">No data available for the selected quiz.</div>
+        <div id="errorMessage">Error fetching data. Please try again later.</div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCrelCatMKLFsyEPOWitxzKamUUpzysqcQ",
+            authDomain: "healthwise-app-fc27f.firebaseapp.com",
+            projectId: "healthwise-app-fc27f",
+            storageBucket: "healthwise-app-fc27f.appspot.com",
+            messagingSenderId: "50687506324",
+            appId: "1:50687506324:web:2d4b22c652bb0535060181",
+            measurementId: "G-WDTFFJ2TH2"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();  // Initialize the auth module
+
+        let managerBranch = null;
+
+        // Redirect to Survey Overview page
+        function goToSurveyOverview() {
+            window.location.href = "/ManSurveryOverview.html";  // Update with the correct URL for the survey overview page
+        }
+
+        // Fetch manager's branch on login
+        auth.onAuthStateChanged(async user => {
+            if (user) {
+                const userDoc = await db.collection('users').doc(user.uid).get();
+                managerBranch = userDoc.data()?.branchId || null;
+                document.getElementById('branchName').textContent = managerBranch;
+                populateQuizDropdown();  // Now loads all quizzes
+            }
+        });
+
+        // Load all quizzes into the dropdown
+        async function populateQuizDropdown() {
+            const dropdown = document.getElementById('quizDropdown');
+            dropdown.innerHTML = `<option value="">Select a quiz...</option>`;
+            
+            try {
+                const quizzesSnapshot = await db.collection('quizzes').get();
+                if (quizzesSnapshot.empty) {
+                    document.getElementById('noQuizMessage').style.display = 'block';
+                    return;
+                }
+
+                quizzesSnapshot.forEach(doc => {
+                    const option = document.createElement('option');
+                    option.value = doc.id;
+                    option.textContent = doc.data().title;
+                    dropdown.appendChild(option);
+                });
+            } catch (error) {
+                console.error("Error loading quizzes:", error);
+                displayErrorMessage();
+            }
+        }
+
+        async function fetchBranchQuizData() {
+            const quizId = document.getElementById('quizDropdown').value;
+            if (!quizId) return;
+
+            try {
+                const responsesSnapshot = await db.collection('userQuizResponses')
+                    .where('quizId', '==', quizId)
+                    .where('status', '==', 'submitted')
+                    .where('branchId', '==', managerBranch)
+                    .get();
+
+                const usersSnapshot = await db.collection('users').where('branchId', '==', managerBranch).get();
+                const users = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                const nonParticipants = users.filter(user => 
+                    !responsesSnapshot.docs.some(response => response.data().userId === user.id)
+                );
+
+                populateNonParticipantsTable(nonParticipants);
+
+                if (responsesSnapshot.empty) {
+                    displayNoStatsMessage();
+                    return;
+                }
+
+                const stats = await calculateBranchStats(responsesSnapshot);
+                updateBranchReport(stats);
+                generateChart(stats.scores);
+            } catch (error) {
+                console.error("Error fetching quiz data:", error);
+                displayErrorMessage();
+            }
+        }
+
+        function populateNonParticipantsTable(nonParticipants) {
+            const tableBody = document.getElementById('nonParticipantsBody');
+            tableBody.innerHTML = '';
+
+            if (nonParticipants.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="3">All users have taken the quiz.</td></tr>`;
+                return;
+            }
+
+            nonParticipants.forEach(user => {
+                const row = `<tr>
+                    <td>${user.id}</td>
+                    <td>${user.name || 'N/A'}</td>
+                    <td>${user.email || 'N/A'}</td>
+                </tr>`;
+                tableBody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        function displayNoStatsMessage() {
+            document.getElementById('noStatsMessage').style.display = 'block';
+        }
+
+        function displayErrorMessage() {
+            document.getElementById('errorMessage').style.display = 'block';
+        }
+    </script>
+</body>
+
+</html>

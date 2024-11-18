@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Creation System</title>
+    <style>
+        .container {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .form-section {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .quiz-header {
+            display: flex;
+            gap: 20px;
+            justify-content: space-between;
+        }
+
+        .quiz-header input {
+            padding: 10px;
+            flex: 1;
+        }
+
+        .question-section {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        .question-fields {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .choices-section {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        .question-marks {
+            margin: 10px 0;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+    </style>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Quiz Management System</h1>
+
+        <!-- Quiz Creation Form -->
+        <div class="form-section">
+            <div class="quiz-header">
+                <input type="text" id="title" name="title" placeholder="Quiz Title" required>
+                <input type="datetime-local" id="startDate" name="startDate" required>
+                <input type="datetime-local" id="endDate" name="endDate" required>
+                <input type="text" id="createdBy" name="createdBy" placeholder="Created By" required>
+                <button type="button" id="publishBtn">Publish Quiz</button>
+            </div>
+        </div>
+
+        <!-- Questions will be added dynamically here -->
+        <div id="questionsContainer"></div>
+
+        <!-- Button to add more questions -->
+        <button type="button" id="addQuestionBtn">Add Question</button>
+    </div>
+
+    <script>
+        (function () {
+            const firebaseConfig = {
+                apiKey: "AIzaSyCrelCatMKLFsyEPOWitxzKamUUpzysqcQ",
+                authDomain: "healthwise-app-fc27f.firebaseapp.com",
+                projectId: "healthwise-app-fc27f",
+                storageBucket: "healthwise-app-fc27f.appspot.com",
+                messagingSenderId: "50687506324",
+                appId: "1:50687506324:web:2d4b22c652bb0535060181",
+                measurementId: "G-WDTFFJ2TH2"
+            };
+        
+            firebase.initializeApp(firebaseConfig);
+            const db = firebase.firestore();
+        
+            let questionCount = 0;
+        
+            function addQuestion() {
+                questionCount++;
+                const questionDiv = document.createElement('div');
+                questionDiv.className = 'form-section question-section';
+                questionDiv.innerHTML = `
+                    <h3>Question ${questionCount}</h3>
+                    <div class="question-fields">
+                        <label for="questionType${questionCount}">Question Type</label>
+                        <select id="questionType${questionCount}" onchange="changeQuestionType(${questionCount})">
+                            <option value="multiple-choice">Multiple Choice</option>
+                            <option value="multiple-select">Multiple Select</option>
+                            <option value="reorder-list">Reorder List</option>
+                        </select>
+                    </div>
+        
+                    <div class="question-marks">
+                        <label for="marks${questionCount}">Marks</label>
+                        <input type="number" id="marks${questionCount}" placeholder="Enter marks" min="1" required>
+                    </div>
+        
+                    <textarea id="content${questionCount}" placeholder="Type question here..." rows="3"></textarea>
+        
+                    <div id="choicesContainer${questionCount}" class="choices-section"></div>
+                    <label for="numChoices${questionCount}">Number of Choices:</label>
+                    <select id="numChoices${questionCount}" onchange="updateChoices(${questionCount})">
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                    </select>
+                `;
+        
+                document.getElementById('questionsContainer').appendChild(questionDiv);
+                updateChoices(questionCount);
+            }
+        
+            window.updateChoices = function (questionNumber) {
+                const questionType = document.getElementById(`questionType${questionNumber}`).value;
+                const numChoices = document.getElementById(`numChoices${questionNumber}`).value;
+                const choicesContainer = document.getElementById(`choicesContainer${questionNumber}`);
+                choicesContainer.innerHTML = '';
+        
+                console.log(`Updating choices for Question ${questionNumber} of type "${questionType}"`);
+        
+                if (questionType === 'multiple-choice') {
+                    for (let i = 1; i <= numChoices; i++) {
+                        choicesContainer.innerHTML += `
+                            <input type="radio" name="answer${questionNumber}" value="${i}">
+                            <input type="text" placeholder="Choice ${i}">
+                        `;
+                    }
+                } else if (questionType === 'multiple-select') {
+                    for (let i = 1; i <= numChoices; i++) {
+                        choicesContainer.innerHTML += `
+                            <input type="checkbox" name="answer${questionNumber}" value="${i}">
+                            <input type="text" placeholder="Choice ${i}">
+                        `;
+                    }
+                } else if (questionType === 'reorder-list') {
+                    for (let i = 1; i <= numChoices; i++) {
+                        choicesContainer.innerHTML += `<input type="text" id="reorderItem${questionNumber}_${i}" placeholder="Item ${i}">`;
+                    }
+        
+                    choicesContainer.innerHTML += `
+                        <div class="correct-order">
+                            <p>Correct Order (enter numbers separated by commas, e.g., "1,2,3"):</p>
+                            <input type="text" id="correctOrder${questionNumber}" placeholder="1,2,3">
+                        </div>
+                    `;
+                }
+            };
+        
+            window.changeQuestionType = function (questionNumber) {
+                document.getElementById(`numChoices${questionNumber}`).disabled = false;
+                updateChoices(questionNumber);
+            };
+        
+            addQuestion();
+        
+            document.getElementById('addQuestionBtn').addEventListener('click', addQuestion);
+        
+            document.getElementById('publishBtn').addEventListener('click', async () => {
+                const title = document.getElementById('title').value;
+                const startDate = new Date(document.getElementById('startDate').value);
+                const endDate = new Date(document.getElementById('endDate').value);
+                const createdBy = document.getElementById('createdBy').value;
+        
+                console.log("Publishing quiz:", { title, startDate, endDate, createdBy });
+        
+                const quizRef = await db.collection('quizzes').add({
+                    title,
+                    startDate: firebase.firestore.Timestamp.fromDate(startDate),
+                    endDate: firebase.firestore.Timestamp.fromDate(endDate),
+                    createdBy,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                });
+        
+                for (let i = 1; i <= questionCount; i++) {
+                    const content = document.getElementById(`content${i}`).value;
+                    const questionType = document.getElementById(`questionType${i}`).value;
+                    const marks = parseInt(document.getElementById(`marks${i}`).value, 10) || 0;
+        
+                    console.log(`Processing Question ${i}:`, { content, questionType, marks });
+        
+                    let choices = [];
+                    let correctAnswer = null;
+        
+                    if (questionType === 'multiple-choice') {
+                        const choiceInputs = document.querySelectorAll(`#choicesContainer${i} input[type="text"]`);
+                        choiceInputs.forEach((input, index) => {
+                            const isCorrect = document.querySelector(`#choicesContainer${i} input[type="radio"][value="${index + 1}"]`).checked;
+                            choices.push({ text: input.value, order: index + 1 });
+                            if (isCorrect) correctAnswer = index + 1;
+                        });
+                        console.log(`Multiple-choice choices for Question ${i}:`, choices);
+                    } else if (questionType === 'multiple-select') {
+                        const choiceInputs = document.querySelectorAll(`#choicesContainer${i} input[type="text"]`);
+                        correctAnswer = [];
+                        choiceInputs.forEach((input, index) => {
+                            const isCorrect = document.querySelector(`#choicesContainer${i} input[type="checkbox"][value="${index + 1}"]`).checked;
+                            choices.push({ text: input.value, order: index + 1 });
+                            if (isCorrect) correctAnswer.push(index + 1);
+                        });
+                        console.log(`Multiple-select choices for Question ${i}:`, choices);
+                    } else if (questionType === 'reorder-list') {
+                        // Only include the individual reorder items as choices
+                        const reorderInputs = document.querySelectorAll(`#choicesContainer${i} input[type="text"]:not(#correctOrder${i})`);
+                        reorderInputs.forEach((input, index) => {
+                            choices.push({ text: input.value, order: index + 1 });
+                        });
+        
+                        // Parse correct order input for validation
+                        const correctOrderInput = document.getElementById(`correctOrder${i}`).value;
+                        correctAnswer = correctOrderInput.split(',').map(num => parseInt(num.trim(), 10));
+        
+                        console.log(`Reorder list choices for Question ${i}:`, choices);
+                        console.log(`Correct order for Question ${i}:`, correctAnswer);
+                    }
+        
+                    await quizRef.collection('questions').add({
+                        content,
+                        questionType,
+                        choices,
+                        correctAnswer,
+                        marks,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    });
+                }
+        
+                console.log("Quiz published successfully!");
+                alert('Quiz published successfully!');
+            });
+        })();
+    </script>
+    
+    
+</body>
+</html>

@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Survey Management System</title>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+    <style>
+        .container {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .form-section {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .quiz-header {
+            display: flex;
+            gap: 20px;
+            justify-content: space-between;
+        }
+
+        .quiz-header input {
+            padding: 10px;
+            flex: 1;
+        }
+
+        .question-section {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        .question-fields {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .choices-section {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        .question-marks {
+            margin: 10px 0;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        .error-message {
+            color: red;
+            margin-top: 5px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Survey Management System</h1>
+
+        <!-- Survey Creation Form -->
+        <div class="form-section">
+            <div class="quiz-header">
+                <input type="text" id="title" name="title" placeholder="Survey Title" required>
+                <input type="datetime-local" id="startDate" name="startDate" required>
+                <input type="datetime-local" id="endDate" name="endDate" required>
+                <input type="text" id="createdBy" name="createdBy" placeholder="Created By" required>
+                <button type="button" id="publishBtn">Publish Survey</button>
+            </div>
+            <div id="dateError" class="error-message">End date must be after start date.</div>
+        </div>
+
+        <!-- Questions will be added dynamically here -->
+        <div id="questionsContainer"></div>
+
+        <!-- Button to add more questions -->
+        <button type="button" id="addQuestionBtn">Add Question</button>
+    </div>
+
+    <script>
+        // Initialize Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCrelCatMKLFsyEPOWitxzKamUUpzysqcQ",
+            authDomain: "healthwise-app-fc27f.firebaseapp.com",
+            projectId: "healthwise-app-fc27f",
+            storageBucket: "healthwise-app-fc27f.appspot.com",
+            messagingSenderId: "50687506324",
+            appId: "1:50687506324:web:2d4b22c652bb0535060181",
+            measurementId: "G-WDTFFJ2TH2"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        let questionCount = 0; // Track the number of questions
+
+        // Function to validate dates
+        function validateDates(startDate, endDate) {
+            return startDate < endDate;
+        }
+
+        // Function to add a new question form dynamically
+        function addQuestion() {
+            questionCount++;
+
+            const questionDiv = document.createElement('div');
+            questionDiv.className = 'form-section question-section';
+            questionDiv.innerHTML = `
+                <h3>Question ${questionCount}</h3>
+                <div class="question-fields">
+                    <label for="questionType${questionCount}">Question Type</label>
+                    <select id="questionType${questionCount}" onchange="changeQuestionType(${questionCount})">
+                        <option value="multiple-choice">Multiple Choice</option>
+                        <option value="true-false">True/False</option>
+                        <option value="text-response">Text Response</option>
+                    </select>
+                </div>
+
+                <textarea id="content${questionCount}" placeholder="Type question here..." rows="3"></textarea>
+
+                <div id="choicesContainer${questionCount}" class="choices-section"></div>
+                <label for="numChoices${questionCount}" class="choices-label">Number of Choices:</label>
+                <select id="numChoices${questionCount}" class="choices-select" onchange="updateChoices(${questionCount})">
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                </select>
+            `;
+
+            document.getElementById('questionsContainer').appendChild(questionDiv);
+
+            // Initialize the default setup for multiple choice
+            updateChoices(questionCount);
+        }
+
+        // Update the choices based on the question type and number of choices selected
+        window.updateChoices = function(questionNumber) {
+            const questionType = document.getElementById(`questionType${questionNumber}`).value;
+            const numChoices = document.getElementById(`numChoices${questionNumber}`).value;
+            const choicesContainer = document.getElementById(`choicesContainer${questionNumber}`);
+            choicesContainer.innerHTML = '';  // Clear existing choices
+
+            if (questionType === 'multiple-choice') {
+                for (let i = 1; i <= numChoices; i++) {
+                    choicesContainer.innerHTML += `
+                        <input type="radio" name="answer${questionNumber}" value="Choice ${i}">
+                        <input type="text" placeholder="Choice ${i}">
+                    `;
+                }
+                document.querySelector(`#numChoices${questionNumber}`).style.display = "inline";
+            } else if (questionType === 'true-false') {
+                choicesContainer.innerHTML = `
+                    <input type="radio" name="answer${questionNumber}" value="true">
+                    <label>True</label>
+                    <input type="radio" name="answer${questionNumber}" value="false">
+                    <label>False</label>
+                `;
+                document.querySelector(`#numChoices${questionNumber}`).style.display = "none";
+            } else if (questionType === 'text-response') {
+                choicesContainer.innerHTML = `<textarea placeholder="User will input text here..." disabled></textarea>`;
+                document.querySelector(`#numChoices${questionNumber}`).style.display = "none";
+            }
+        };
+
+        // Change the question type and update the form layout accordingly
+        window.changeQuestionType = function(questionNumber) {
+            updateChoices(questionNumber); // Update based on selected type
+        };
+
+        // Add the first question form by default
+        addQuestion();
+
+        // Add event listener to add more questions
+        document.getElementById('addQuestionBtn').addEventListener('click', addQuestion);
+
+        // Publish the survey
+        document.getElementById('publishBtn').addEventListener('click', async () => {
+            const title = document.getElementById('title').value;
+            const startDateString = document.getElementById('startDate').value;
+            const endDateString = document.getElementById('endDate').value;
+            const createdBy = document.getElementById('createdBy').value;
+
+            // Convert string dates to Date objects
+            const startDateObj = new Date(startDateString);
+            const endDateObj = new Date(endDateString);
+
+            // Validate dates
+            if (!validateDates(startDateObj, endDateObj)) {
+                document.getElementById('dateError').style.display = 'block';
+                return;
+            } else {
+                document.getElementById('dateError').style.display = 'none';
+            }
+
+            // Convert to Firebase Timestamps
+            const startDate = firebase.firestore.Timestamp.fromDate(startDateObj);
+            const endDate = firebase.firestore.Timestamp.fromDate(endDateObj);
+
+            try {
+                // Add survey metadata to Firebase
+                const surveyRef = await db.collection('surveys').add({
+                    title,
+                    startDate,
+                    endDate,
+                    createdBy,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                });
+
+                // Loop through questions and add them to Firebase
+                for (let i = 1; i <= questionCount; i++) {
+                    const content = document.getElementById(`content${i}`).value;
+                    const questionType = document.getElementById(`questionType${i}`).value;
+
+                    let choices = [];
+
+                    if (questionType === 'multiple-choice') {
+                        const choiceInputs = document.querySelectorAll(`#choicesContainer${i} input[type="text"]`);
+                        choiceInputs.forEach((input) => {
+                            choices.push(input.value);
+                        });
+                    } else if (questionType === 'true-false') {
+                        choices = ["True", "False"];  // For true/false, the choices are predefined
+                    }
+
+                    // Add question to the survey's questions sub-collection in Firebase
+                    await surveyRef.collection('questions').add({
+                        content,
+                        questionType,
+                        choices,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    });
+                }
+
+                alert('Survey published successfully!');
+                
+                // Optional: Reset form after successful submission
+                document.getElementById('title').value = '';
+                document.getElementById('startDate').value = '';
+                document.getElementById('endDate').value = '';
+                document.getElementById('createdBy').value = '';
+                document.getElementById('questionsContainer').innerHTML = '';
+                questionCount = 0;
+                addQuestion(); // Add back the first question
+
+            } catch (error) {
+                console.error("Error publishing survey:", error);
+                alert('Error publishing survey. Please try again.');
+            }
+        });
+    </script>
+</body>
+</html>

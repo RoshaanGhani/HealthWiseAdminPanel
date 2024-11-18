@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Branch Survey Results Overview</title>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Arial', sans-serif;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .welcome-text {
+            color: #333;
+            font-size: 1.1em;
+            margin-bottom: 10px;
+        }
+
+        .logout-btn {
+            padding: 8px 16px;
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .logout-btn:hover {
+            background: #da190b;
+        }
+
+        .survey-selector {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1em;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .metric-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .metric-card h3 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .metric-card .value {
+            font-size: 1.5em;
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        .charts-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+        }
+
+        .chart-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-style: italic;
+        }
+
+        .unauthorized {
+            text-align: center;
+            padding: 50px;
+            color: #f44336;
+        }
+
+        canvas {
+            max-width: 100%;
+            height: auto !important;
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                text-align: center;
+                gap: 15px;
+            }
+
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .charts-container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="dashboardContainer" class="container">
+        <div class="header">
+            <div>
+                <h1>Survey Results Overview</h1>
+                <p id="welcomeMessage" class="welcome-text"></p>
+            </div>
+            <button id="logoutBtn" class="logout-btn">Logout</button>
+        </div>
+
+        <select id="surveySelector" class="survey-selector">
+            <option value="">Select a survey</option>
+        </select>
+
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <h3>Branch Total Responses</h3>
+                <div id="totalResponses" class="value">-</div>
+            </div>
+            <div class="metric-card">
+                <h3>Branch Average Completion Time</h3>
+                <div id="avgCompletionTime" class="value">-</div>
+            </div>
+            <div class="metric-card">
+                <h3>Branch Response Rate</h3>
+                <div id="responseRate" class="value">-</div>
+            </div>
+            <div class="metric-card">
+                <h3>Latest Branch Response</h3>
+                <div id="latestResponse" class="value">-</div>
+            </div>
+        </div>
+
+        <div id="chartsContainer" class="charts-container">
+            <!-- Charts will be dynamically added here -->
+        </div>
+    </div>
+    <script>
+        // Initialize Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCrelCatMKLFsyEPOWitxzKamUUpzysqcQ",
+            authDomain: "healthwise-app-fc27f.firebaseapp.com",
+            projectId: "healthwise-app-fc27f",
+            storageBucket: "healthwise-app-fc27f.appspot.com",
+            messagingSenderId: "50687506324",
+            appId: "1:50687506324:web:2d4b22c652bb0535060181",
+            measurementId: "G-WDTFFJ2TH2"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        let charts = [];
+        let currentBranch = null;
+
+        // Auth State Observer
+        auth.onAuthStateChanged(async (user) => {
+            if (!user) {
+                window.location.href = 'index.html'; // Redirect to login page if not authenticated
+                return;
+            }
+
+            try {
+                const userDoc = await db.collection('users')
+                    .where('email', '==', user.email)
+                    .where('role', '==', 'manager')
+                    .get();
+
+                if (userDoc.empty) {
+                    document.body.innerHTML = '<div class="unauthorized"><h2>Unauthorized Access</h2><p>This page is only accessible to managers.</p></div>';
+                    await auth.signOut();
+                    setTimeout(() => window.location.href = 'index.html', 2000);
+                    return;
+                }
+
+                const userData = userDoc.docs[0].data();
+                currentBranch = userData.branch;
+                document.getElementById('welcomeMessage').textContent = 
+                    `Welcome, Branch Manager at ${userData.branch}`;
+                loadSurveys();
+            } catch (error) {
+                console.error("Error fetching user data:", error);
+                alert('Error loading user data. Please try again.');
+            }
+        });
+
+        // Logout Handler
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            auth.signOut();
+            window.location.href = 'index.html';
+        });
+
+        function createQuestionChart(questionData, containerId) {
+            const ctx = document.getElementById(containerId).getContext('2d');
+            
+            // Prepare data based on question type
+            let chartData;
+            let chartType;
+            
+            if (questionData.type === 'multiple_choice' || questionData.type === 'single_choice') {
+                chartType = 'bar';
+                const labels = Object.keys(questionData.responses);
+                const data = Object.values(questionData.responses);
+                
+                chartData = {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Responses',
+                        data: data,
+                        backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                };
+            } else if (questionData.type === 'rating') {
+                chartType = 'bar';
+                const labels = Array.from({length: 5}, (_, i) => i + 1);
+                const data = labels.map(rating => questionData.responses[rating] || 0);
+                
+                chartData = {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Responses',
+                        data: data,
+                        backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                };
+            }
+            
+            if (chartData) {
+                const chart = new Chart(ctx, {
+                    type: chartType,
+                    data: chartData,
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            title: {
+                                display: true,
+                                text: questionData.question,
+                                font: {
+                                    size: 16
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                charts.push(chart);
+            }
+        }
+
+        async function updateDashboard(surveyId) {
+            if (!surveyId || !currentBranch) return;
+
+            charts.forEach(chart => chart.destroy());
+            charts = [];
+            document.getElementById('chartsContainer').innerHTML = '';
+
+            try {
+                // Fetch survey responses for specific branch
+                const responsesSnapshot = await db.collection('userSurveyResponses')
+                    .where('surveyId', '==', surveyId)
+                    .where('branch', '==', currentBranch)
+                    .get();
+
+                const responses = responsesSnapshot.docs.map(doc => doc.data());
+
+                // Update metrics
+                document.getElementById('totalResponses').textContent = responses.length;
+                document.getElementById('avgCompletionTime').textContent = 
+                    `${calculateAverageTime(responses)} seconds`;
+                
+                const totalBranchEmployees = await getTotalBranchEmployees(currentBranch);
+                const responseRate = totalBranchEmployees ? 
+                    `${Math.round((responses.length / totalBranchEmployees) * 100)}%` : 'N/A';
+                document.getElementById('responseRate').textContent = responseRate;
+
+                const latestResponse = responses.reduce((latest, current) => {
+                    return !latest || current.completedAt > latest.completedAt ? current : latest;
+                }, null);
+
+                document.getElementById('latestResponse').textContent = 
+                    formatDate(latestResponse?.completedAt);
+
+                // Process responses for charts
+                if (responses.length > 0) {
+                    // Get survey questions
+                    const surveyDoc = await db.collection('surveys').doc(surveyId).get();
+                    const survey = surveyDoc.data();
+                    
+                    // Process each question
+                    survey.questions.forEach((question, index) => {
+                        // Create chart container
+                        const chartContainer = document.createElement('div');
+                        chartContainer.className = 'chart-card';
+                        const canvas = document.createElement('canvas');
+                        const chartId = `chart-${index}`;
+                        canvas.id = chartId;
+                        chartContainer.appendChild(canvas);
+                        document.getElementById('chartsContainer').appendChild(chartContainer);
+
+                        // Aggregate responses for this question
+                        const questionResponses = {};
+                        responses.forEach(response => {
+                            const answer = response.answers[index];
+                            if (Array.isArray(answer)) {
+                                // Multiple choice
+                                answer.forEach(option => {
+                                    questionResponses[option] = (questionResponses[option] || 0) + 1;
+                                });
+                            } else {
+                                // Single choice or rating
+                                questionResponses[answer] = (questionResponses[answer] || 0) + 1;
+                            }
+                        });
+
+                        // Create chart
+                        createQuestionChart({
+                            question: question.text,
+                            type: question.type,
+                            responses: questionResponses
+                        }, chartId);
+                    });
+                } else {
+                    document.getElementById('chartsContainer').innerHTML = 
+                        '<div class="no-data">No responses available for this survey</div>';
+                }
+            } catch (error) {
+                console.error("Error updating dashboard:", error);
+                alert('Error loading survey results. Please try again.');
+            }
+        }
+
+        async function getTotalBranchEmployees(branch) {
+            try {
+                const employeeSnapshot = await db.collection('users')
+                    .where('branch', '==', branch)
+                    .where('role', '==', 'employee')
+                    .get();
+                return employeeSnapshot.size;
+            } catch (error) {
+                console.error("Error getting branch employees:", error);
+                return 0;
+            }
+        }
+
+        function formatDate(timestamp) {
+            if (!timestamp) return 'No responses yet';
+            return new Date(timestamp).toLocaleString();
+        }
+
+        function calculateAverageTime(responses) {
+            if (!responses.length) return 0;
+            const totalTime = responses.reduce((sum, response) => sum + (response.completionTime || 0), 0);
+            return Math.round(totalTime / responses.length);
+        }
+
+        async function loadSurveys() {
+            if (!currentBranch) return;
+            
+            try {
+                const surveysSnapshot = await db.collection('surveys').get();
+                const selector = document.getElementById('surveySelector');
+                selector.innerHTML = '<option value="">Select a survey</option>';
+                
+                surveysSnapshot.forEach(doc => {
+                    const survey = doc.data();
+                    const option = document.createElement('option');
+                    option.value = doc.id;
+                    option.textContent = survey.title;
+                    selector.appendChild(option);
+                });
+            } catch (error) {
+                console.error("Error loading surveys:", error);
+                alert('Error loading surveys. Please try again.');
+            }
+        }
+
+        // Survey selector event listener
+        document.getElementById('surveySelector').addEventListener('change', (e) => {
+            const surveyId = e.target.value;
+            if (surveyId) {
+                updateDashboard(surveyId);
+            } else {
+                // Reset dashboard when no survey is selected
+                document.getElementById('totalResponses').textContent = '-';
+                document.getElementById('avgCompletionTime').textContent = '-';
+                document.getElementById('responseRate').textContent = '-';
+                document.getElementById('latestResponse').textContent = '-';
+                document.getElementById('chartsContainer').innerHTML = '';
+                charts.forEach(chart => chart.destroy());
+                charts = [];
+            }
+        });
+    </script>
+</body>
+</html>

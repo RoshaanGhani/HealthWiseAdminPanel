@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Resources</title>
+    <style>
+        /* Previous styles remain the same */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            display: flex;
+            height: 100vh;
+        }
+
+        #sidebar {
+            background-color: #2c3e50;
+            color: white;
+            min-width: 250px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .main-content {
+            flex-grow: 1;
+            padding: 20px;
+            background-color: white;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+        }
+
+        .resource-form {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .resource-form input,
+        .resource-form select,
+        .resource-form textarea {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .resource-form button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .resource-form button:hover {
+            background-color: #45a049;
+        }
+
+        .resource-list {
+            margin-top: 40px;
+        }
+
+        .resource-item {
+            background-color: #fafafa;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .resource-item h3 {
+            margin-bottom: 10px;
+        }
+
+        /* New styles for file upload */
+        .file-input-container {
+            margin-bottom: 15px;
+        }
+
+        .file-input-container input[type="file"] {
+            display: none;
+        }
+
+        .file-input-label {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #2c3e50;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .file-input-label:hover {
+            background-color: #34495e;
+        }
+
+        .file-name {
+            margin-left: 10px;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .upload-progress {
+            margin-top: 5px;
+            height: 4px;
+            background-color: #f0f0f0;
+            border-radius: 2px;
+            overflow: hidden;
+            display: none;
+        }
+
+        .upload-progress-bar {
+            height: 100%;
+            background-color: #4CAF50;
+            width: 0%;
+            transition: width 0.2s ease;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h2>Admin Panel</h2>
+        <ul>
+            <li><a href="dashboard.html">Dashboard</a></li>
+            <li><a href="SurveyOverview.html">Survey Overview</a></li>
+            <li><a href="UsersOverview.html">Users Overview</a></li>
+            <li><a href="QuizCreation.html">Quiz Creation</a></li>
+            <li><a href="Cases.html">Cases</a></li>
+            <li><a href="Resources.html">Resources</a></li>
+            <li><a href="CreateSurvey.html">Create Survey</a></li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <h1>Resource Management</h1>
+        
+        <form id="resourceForm" class="resource-form">
+            <input type="text" id="title" placeholder="Resource Title" required>
+            <textarea id="description" placeholder="Resource Description" required></textarea>
+            <select id="resourceType" required>
+                <option value="">Select Resource Type</option>
+                <option value="document">Document</option>
+                <option value="video">Video</option>
+                <option value="link">Link</option>
+                <option value="other">Other</option>
+            </select>
+            <input type="url" id="url" placeholder="Resource URL">
+            
+            <!-- New file input section -->
+            <div class="file-input-container">
+                <label class="file-input-label">
+                    Choose File
+                    <input type="file" id="fileInput" />
+                </label>
+                <span id="fileName" class="file-name"></span>
+                <div class="upload-progress" id="uploadProgress">
+                    <div class="upload-progress-bar" id="uploadProgressBar"></div>
+                </div>
+            </div>
+
+            <input type="text" id="createdBy" placeholder="Created By" required>
+            <button type="submit">Add Resource</button>
+        </form>
+
+        <div id="resourceList" class="resource-list">
+            <!-- Resources will be displayed here -->
+        </div>
+    </div>
+
+    <script type="module">
+        // Import the functions you need from the SDKs
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getFirestore, collection, doc, setDoc, serverTimestamp } 
+        from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+        import { getStorage, ref, uploadBytesResumable, getDownloadURL } 
+        from "https://www.gstatic.com/firebasejs/9.22.0/firebase-storage.js";
+
+        // Your Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCrelCatMKLFsyEPOWitxzKamUUpzysqcQ",
+            authDomain: "healthwise-app-fc27f.firebaseapp.com",
+            projectId: "healthwise-app-fc27f",
+            storageBucket: "healthwise-app-fc27f.appspot.com",
+            messagingSenderId: "50687506324",
+            appId: "1:50687506324:web:2d4b22c652bb0535060181",
+            measurementId: "G-WDTFFJ2TH2"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const storage = getStorage(app);
+
+        // File input handling
+        const fileInput = document.getElementById('fileInput');
+        const fileName = document.getElementById('fileName');
+        const uploadProgress = document.getElementById('uploadProgress');
+        const uploadProgressBar = document.getElementById('uploadProgressBar');
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) {
+                fileName.textContent = e.target.files[0].name;
+            }
+        });
+
+        // Function to upload file to Firebase Storage
+        async function uploadFile(file) {
+            const storageRef = ref(storage, 'resources/' + file.name);
+            const uploadTask = uploadBytesResumable(storageRef, file);
+
+            return new Promise((resolve, reject) => {
+                uploadTask.on('state_changed',
+                    (snapshot) => {
+                        // Show upload progress
+                        uploadProgress.style.display = 'block';
+                        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                        uploadProgressBar.style.width = progress + '%';
+                    },
+                    (error) => {
+                        // Handle unsuccessful uploads
+                        uploadProgress.style.display = 'none';
+                        reject(error);
+                    },
+                    async () => {
+                        // Handle successful uploads
+                        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                        uploadProgress.style.display = 'none';
+                        resolve(downloadURL);
+                    }
+                );
+            });
+        }
+
+        // Function to add a resource to Firestore
+        async function addResource(resourceId, title, description, resourceType, url, fileURL, createdBy) {
+            try {
+                const resourceRef = doc(collection(db, 'resources'), resourceId);
+                await setDoc(resourceRef, {
+                    title,
+                    description,
+                    resourceType,
+                    url,
+                    fileURL,
+                    createdBy,
+                    createdAt: serverTimestamp()
+                });
+                console.log("Resource successfully added!");
+                return true;
+            } catch (error) {
+                console.error("Error adding resource: ", error);
+                throw error;
+            }
+        }
+
+        // Form submission handler
+        document.getElementById('resourceForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const title = document.getElementById('title').value;
+            const description = document.getElementById('description').value;
+            const resourceType = document.getElementById('resourceType').value;
+            const url = document.getElementById('url').value;
+            const file = fileInput.files[0];
+            const createdBy = document.getElementById('createdBy').value;
+
+            const resourceId = new Date().getTime().toString();
+
+            try {
+                let fileURL = '';
+                if (file) {
+                    fileURL = await uploadFile(file);
+                }
+
+                await addResource(resourceId, title, description, resourceType, url, fileURL, createdBy);
+                alert('Resource added successfully!');
+                document.getElementById('resourceForm').reset();
+                fileName.textContent = '';
+                displayResource({ title, description, resourceType, url, fileURL, createdBy });
+            } catch (error) {
+                alert('Error adding resource: ' + error.message);
+            }
+        });
+
+        function displayResource(resource) {
+            const resourceItem = document.createElement('div');
+            resourceItem.className = 'resource-item';
+            resourceItem.innerHTML = `
+                <h3>${resource.title}</h3>
+                <p><strong>Description:</strong> ${resource.description}</p>
+                <p><strong>Type:</strong> ${resource.resourceType}</p>
+                <p><strong>URL:</strong> ${resource.url ? `<a href="${resource.url}" target="_blank">${resource.url}</a>` : 'N/A'}</p>
+                <p><strong>File:</strong> ${resource.fileURL ? `<a href="${resource.fileURL}" target="_blank">Download File</a>` : 'N/A'}</p>
+                <p><strong>Created By:</strong> ${resource.createdBy}</p>
+            `;
+            document.getElementById('resourceList').appendChild(resourceItem);
+        }
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detailed Quiz Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        h1, h2 {
+            color: #333;
+        }
+
+        .quiz-metadata {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+        }
+
+        .quiz-metadata p {
+            margin: 8px 0;
+            color: #495057;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: center;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        .chart-container {
+            width: 100%;
+            margin-top: 30px;
+        }
+
+        #noStatsMessage, #errorMessage {
+            display: none;
+            text-align: center;
+            margin-top: 50px;
+            color: #888;
+        }
+
+        select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            margin-bottom: 10px;
+            width: 200px;
+        }
+    </style>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <h2>Select a Quiz</h2>
+        <select id="quizDropdown" onchange="fetchQuizData()">
+            <option value="">Select a quiz...</option>
+        </select>
+
+        <div class="quiz-metadata">
+            <p><strong>Created By:</strong> <span id="createdBy">-</span></p>
+            <p><strong>Created At:</strong> <span id="createdAt">-</span></p>
+            <p><strong>Start Date:</strong> <span id="startDate">-</span></p>
+            <p><strong>End Date:</strong> <span id="endDate">-</span></p>
+        </div>
+
+        <h1 id="quizTitle">Quiz Title</h1>
+        <table id="quizReportTable">
+            <thead>
+                <tr>
+                    <th>No. of Users</th>
+                    <th>Average Score</th>
+                    <th>Average Time Taken</th>
+                    <th>% Passed</th>
+                    <th>% Failed</th>
+                    <th>Highest Score</th>
+                    <th>Lowest Score</th>
+                    <th>Average Score per Branch</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td id="numUsers"></td>
+                    <td id="avgScore"></td>
+                    <td id="avgTime"></td>
+                    <td id="percentPassed"></td>
+                    <td id="percentFailed"></td>
+                    <td id="highestScore"></td>
+                    <td id="lowestScore"></td>
+                    <td id="branchAvgScore"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>Average Score per Branch</h2>
+        <div class="chart-container">
+            <canvas id="branchScoreChart"></canvas>
+        </div>
+
+        <div id="noStatsMessage">No stats found for the selected quiz.</div>
+        <div id="errorMessage">Error fetching quiz data. Please try again later.</div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCrelCatMKLFsyEPOWitxzKamUUpzysqcQ",
+            authDomain: "healthwise-app-fc27f.firebaseapp.com",
+            projectId: "healthwise-app-fc27f",
+            storageBucket: "healthwise-app-fc27f.appspot.com",
+            messagingSenderId: "50687506324",
+            appId: "1:50687506324:web:2d4b22c652bb0535060181",
+            measurementId: "G-WDTFFJ2TH2"
+        };
+        
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        function formatDate(timestamp) {
+            if (!timestamp) return '-';
+            const date = timestamp.toDate();
+            return date.toLocaleString('en-GB', {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZoneName: 'short'
+            });
+        }
+
+        async function populateDropdown() {
+            const dropdown = document.getElementById('quizDropdown');
+            try {
+                const quizzesSnapshot = await db.collection('quizzes').get();
+                quizzesSnapshot.forEach(doc => {
+                    const option = document.createElement('option');
+                    option.value = doc.id;
+                    option.text = doc.data().title;
+                    dropdown.appendChild(option);
+                });
+            } catch (error) {
+                console.error("Error fetching quizzes:", error);
+            }
+        }
+
+        async function fetchQuizData() {
+            const quizId = document.getElementById('quizDropdown').value;
+            if (!quizId) return;
+
+            try {
+                // Fetch quiz metadata
+                const quizDoc = await db.collection('quizzes').doc(quizId).get();
+                const quizData = quizDoc.data();
+                
+                // Update metadata display
+                document.getElementById('createdBy').textContent = quizData.createdBy || '-';
+                document.getElementById('createdAt').textContent = formatDate(quizData.createdAt);
+                document.getElementById('startDate').textContent = formatDate(quizData.startDate);
+                document.getElementById('endDate').textContent = formatDate(quizData.endDate);
+                document.getElementById('quizTitle').textContent = quizData.title;
+
+                const responsesSnapshot = await db.collection('userQuizResponses')
+                    .where('quizId', '==', quizId)
+                    .where('status', '==', 'submitted')
+                    .get();
+
+                if (responsesSnapshot.empty) {
+                    displayNoStatsMessage();
+                    return;
+                }
+
+                const stats = await calculateStats(responsesSnapshot);
+                updateQuizReport(stats);
+                generateBarChart(Object.entries(stats.branches));
+            } catch (error) {
+                console.error("Error fetching quiz data:", error);
+                displayErrorMessage();
+            }
+        }
+
+        async function calculateStats(responsesSnapshot) {
+            const stats = {
+                numUsers: 0,
+                totalMarks: 0,
+                totalPossibleMarks: 0,
+                totalTime: 0,
+                passed: 0,
+                failed: 0,
+                highestScore: null,
+                lowestScore: null,
+                branches: {}
+            };
+
+            for (const doc of responsesSnapshot.docs) {
+                const response = doc.data();
+                const { actualMarks, totalMarks, duration, userId } = response;
+
+                const userDoc = await db.collection('users').doc(userId).get();
+                const branchId = userDoc.exists ? userDoc.data().branchId : "Unknown";
+
+                stats.numUsers++;
+                stats.totalMarks += actualMarks;
+                stats.totalPossibleMarks += totalMarks;
+                stats.totalTime += duration;
+
+                const scorePercentage = (actualMarks / totalMarks) * 100;
+
+                if (stats.highestScore === null || scorePercentage > stats.highestScore) {
+                    stats.highestScore = scorePercentage;
+                }
+                if (stats.lowestScore === null || scorePercentage < stats.lowestScore) {
+                    stats.lowestScore = scorePercentage;
+                }
+
+                if (scorePercentage >= 50) stats.passed++;
+                else stats.failed++;
+
+                if (!stats.branches[branchId]) {
+                    stats.branches[branchId] = { totalScore: 0, count: 0 };
+                }
+                stats.branches[branchId].totalScore += scorePercentage;
+                stats.branches[branchId].count++;
+            }
+
+            for (const branch in stats.branches) {
+                const { totalScore, count } = stats.branches[branch];
+                stats.branches[branch] = (totalScore / count).toFixed(2);
+            }
+
+            return stats;
+        }
+
+        function updateQuizReport(stats) {
+            document.getElementById('numUsers').textContent = stats.numUsers;
+            document.getElementById('avgScore').textContent = `${(stats.totalMarks / stats.totalPossibleMarks * 100).toFixed(2)}%`;
+            
+            // Convert seconds to minutes
+            const avgTimeInMinutes = ((stats.totalTime / stats.numUsers) / 60).toFixed(2);
+            document.getElementById('avgTime').textContent = `${avgTimeInMinutes} mins`;
+            
+            document.getElementById('percentPassed').textContent = `${(stats.passed / stats.numUsers * 100).toFixed(2)}%`;
+            document.getElementById('percentFailed').textContent = `${(stats.failed / stats.numUsers * 100).toFixed(2)}%`;
+            document.getElementById('highestScore').textContent = stats.highestScore !== null ? `${stats.highestScore.toFixed(2)}%` : "N/A";
+            document.getElementById('lowestScore').textContent = stats.lowestScore !== null ? `${stats.lowestScore.toFixed(2)}%` : "N/A";
+
+            const branchScores = Object.values(stats.branches);
+            const branchAvg = branchScores.length > 0
+                ? (branchScores.reduce((sum, score) => sum + parseFloat(score), 0) / branchScores.length).toFixed(2)
+                : "N/A";
+            document.getElementById('branchAvgScore').textContent = branchAvg !== "N/A" ? `${branchAvg}%` : "N/A";
+        }
+
+        function generateBarChart(branchData) {
+            const ctx = document.getElementById('branchScoreChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: branchData.map(([branch]) => branch),
+                    datasets: [{
+                        label: 'Average Score (%)',
+                        data: branchData.map(([_, score]) => score),
+                        backgroundColor: 'rgba(75, 192, 192, 0.6)'
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+        }
+
+        function displayNoStatsMessage() {
+            document.getElementById('noStatsMessage').style.display = 'block';
+            document.getElementById('quizReportTable').style.display = 'none';
+            document.getElementById('branchScoreChart').style.display = 'none';
+        }
+
+        function displayErrorMessage() {
+            document.getElementById('errorMessage').style.display = 'block';
+            document.getElementById('quizReportTable').style.display = 'none';
+            document.getElementById('branchScoreChart').style.display = 'none';
+        }
+
+        window.onload = populateDropdown;
+    </script>
+</body>
+
+</html>
